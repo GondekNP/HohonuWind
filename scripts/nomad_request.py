@@ -57,7 +57,6 @@ def retrieve_nomad(lat_range = (-90, 90),
         for file in os.scandir(temp_dir):
             os.remove(file.path)
 
-
     # after many attempts to do so, not possible to read cfgrib directly to memory
     # without first saving to disk. As a result we need to download the grib file
     # and rename it w/ .grib extension to properly ingest it
@@ -74,6 +73,37 @@ def retrieve_nomad(lat_range = (-90, 90),
         return wind_df
     elif out_type == 'csv':
         wind_df.to_csv(csv_path)
+
+
+def retrieve_closest_points(nomad_df, lat_lon, var_list, out_type = 'xarray'):
+    '''
+    Given a latitude or longitude, returns the four closest GFS
+    forecast locations. 
+
+    Inputs:
+        nomad_df: GFS dataset in xarray format
+        lat_lon: (tuple)latitude of survey location
+        lon: longitude of survey location
+        var_list: list of variables of interest
+        out_type: one of {'xrray', 'numpy'}
+
+    Output:
+        a sliced xarray dataset, with the four closest GFS points
+    '''
+
+    lat, lon = lat_lon
+    lat_coursened = (math.floor(lat * 4) / 4, math.ceil(lat * 4) / 4)
+    lon_coursened = \
+        (math.floor(lon * 4) / 4 + 180, math.ceil(lon * 4) / 4 + 180)
+
+    sliced = nomad_df.sel(
+        {'latitude':lat_coursened, 'longitude': lon_coursened}
+    )
+
+    if out_type == 'xarray':
+        return sliced[var_list].to_array()
+    elif out_type == 'numpy':
+        return sliced[var_list].to_array().to_numpy()
 
 
 if __name__ == "__main__":
