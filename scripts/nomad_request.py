@@ -1,3 +1,4 @@
+from unittest.mock import NonCallableMagicMock
 import urllib.request as rq
 import datetime
 import math
@@ -9,8 +10,10 @@ import wget
 def retrieve_nomad(lat_range = (-90, 90),
                    lon_range = (0, 360),
                    out_type = 'xarray',
-                   csv_path = 'temp_grib.csv',
-                   temp_dir = 'tmp/'):
+                   temp_dir = '../tmp/',
+                   lead_time = None,
+                   call_date = None,
+                   call_time = None):
     '''
     Retrieves GFS predictions via NOMAD API, optionally filtering to a specific
     lat/lon window. By default, returns an xarray object - other options are 
@@ -30,21 +33,36 @@ def retrieve_nomad(lat_range = (-90, 90),
 
     # download the most recent GFS predictions via NOMAD, optionally subset to 
     # specific latitude/longitude window
-    call_time = datetime.datetime.now()
+
+    if lead_time:
+        lead_format = 'f' + str(lead_time).zfill(3)
+    else:
+        lead_format = 'anl'
+
+    if not call_time:
+        #if no call time, coarsen current time to most recent 6-hour interval
+        call_time = str(math.floor(datetime.datetime.now().hour / 6) * 6)\
+            .zfill(2)
+
+    if not call_date:
+        call_date = datetime.datetime.now().strftime('%Y%m%d')
 
     nomad_par = {
-        'date_format' : call_time.strftime('%Y%m%d'),
+        'date_format' : call_date,
         'lat_min' : lat_range[0],
         'lat_max' : lat_range[1],
         'lon_min' : lon_range[0],
         'lon_max' : lon_range[1],
-        'hour_format' : str(math.floor(call_time.hour / 6) * 6).zfill(2)
+        'hour_format' : call_time,
+        'lead_format' : lead_format
     }
 
     # surface level data from https://nomads.ncep.noaa.gov/
     nomad_call = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25_1hr.pl?" +\
-        "file=gfs.t{hour_format}z.pgrb2.0p25.anl&" +\
-        "lev_surface=on&all_var=on" +\
+        "file=gfs.t{hour_format}z.pgrb2.0p25.{lead_format}" +\
+        "&lev_PV%5C%3D2e%5C-06_%5C%28Km%5C%5E2%2Fkg%2Fs%5C%29_surface=on" +\
+        "&all_var=on" +\
+        "&subregion=" +\
         "&leftlon={lon_min}&rightlon={lon_max}" +\
         "&toplat={lat_max}&bottomlat={lat_min}" +\
         "&dir=%2Fgfs.{date_format}%2F{hour_format}%2Fatmos"
@@ -61,8 +79,8 @@ def retrieve_nomad(lat_range = (-90, 90),
     # without first saving to disk. As a result we need to download the grib file
     # and rename it w/ .grib extension to properly ingest it
 
-    wget.download(nomad_call, out = 'tmp/temp_df.grib')
-    wind_xr = xr.open_dataset('tmp/temp_df.grib', engine='cfgrib')
+    wget.download(nomad_call, out = temp_dir + 'temp_df.grib')
+    wind_xr = xr.open_dataset(temp_dir + 'temp_df.grib', engine='cfgrib')
     
     if out_type == 'xarray':
         return wind_xr
@@ -72,7 +90,7 @@ def retrieve_nomad(lat_range = (-90, 90),
     if out_type == 'pandas':
         return wind_df
     elif out_type == 'csv':
-        wind_df.to_csv(csv_path)
+        wind_df.to_csv(temp_dir + 'temp_df.csv', mode = 'a')
 
 
 def retrieve_closest_points(nomad_df, lat_lon, var_list, out_type = 'xarray'):
@@ -103,7 +121,8 @@ def retrieve_closest_points(nomad_df, lat_lon, var_list, out_type = 'xarray'):
     if out_type == 'xarray':
         return sliced[var_list].to_array()
     elif out_type == 'numpy':
-        return sliced[var_list].to_array().to_numpy()
+        out = sliced[var_list].to_array().to_numpy()
+        return out
 
 
 if __name__ == "__main__":
